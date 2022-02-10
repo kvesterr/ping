@@ -147,24 +147,24 @@ string ch_to_str(unsigned char val)
 	return res;
 }
 
-/*  Функция представляющая строку в виде массива из 4-х элементов  */
-unsigned char* ip_to_array(string ip, unsigned char* arr)
+/*  Функция представляющая строку ip в виде массива из 4-х элементов  */
+unsigned short* ip_to_array(string ip, unsigned short* arr)
 {
-	unsigned char val = 0;
+	unsigned short val = 0;
 	short cntr = 0;
 
 	for (int i = 0; i < ip.length(); i++)
 	{
-		if ((ip[i] > 47) && (ip[i] < 58))
+		if ((ip[i] > 47) && (ip[i] < 58))  //  Собираем символы цифр в число.
 			val = (val * 10) + ((int)ip[i]) - 48;
 		else
 		{
-			arr[cntr] = (char)val;  //  Сделать корректную обработку ip адресов.
+			arr[cntr] = val;
 			val = 0;
 			cntr++;
 		}
 	}
-	arr[cntr] = (char)val;
+	arr[cntr] = val;
 
 	return arr;
 }
@@ -244,6 +244,40 @@ int send_packet(icmp_packet packet, int *stat_array)
 	return 0;
 }
 
+/*  Функция проверки ip адреса в виде строки на корректность.  */
+bool is_ip_valid(string ip)
+{
+	byte point_count = 0;  //  Переменная для хранения количества точек в адресе.
+	unsigned short arr[4];
+	string source_ip = ip;
+
+	//  Проверка на количество точек в адресе (должно быть 3).
+	size_t found = ip.find(".");
+	do
+	{
+		ip.replace(found, 1, "");
+		point_count++;
+		found = ip.find(".");
+	} while (found != string::npos);
+
+	if (point_count != 3)
+		return false;
+
+
+	//  Проверка, являются ли все символы строки цифрами.
+	for (int i = 0; i < ip.length(); i++)
+		if (!((ip[i] > 47) && (ip[i] < 58)))
+			return false;
+
+	//  Проверка каждого числа в ip адресе (0 >= chislo < 256).
+	ip_to_array(source_ip, arr);
+	for (int i = 0; i < 4; i++)
+		if ((arr[i] < 0) || (arr[i] > 255))
+			return false;
+
+	return true;
+}
+
 /*  Функция создания и установки соеденения сокета.  */
 int run_socket(string ip_address)
 {
@@ -257,9 +291,16 @@ int run_socket(string ip_address)
 	//  Заполнение структуры хранящей информацию о адресе.
 	if ((ip_address[0] > 47) && (ip_address[0] < 58))  //  Если введен ip адрес.
 	{
-		unsigned char ip_array[4];
+		unsigned short ip_array[4];
+
+		if (!is_ip_valid(ip_address))
+		{
+			cout << "IP address is incorrect." << endl;
+			return 1;
+		}
 
 		ip_to_array(ip_address, ip_array);
+		
 		t_addr.ss_family = AF_INET;
 		t_addr.__ss_pad1[2] = ip_array[0];
 		t_addr.__ss_pad1[3] = ip_array[1];
@@ -269,10 +310,10 @@ int run_socket(string ip_address)
 	else  //  Если введен домен.
 	{
 		//  Получение ip адреса по имени хоста.
-		auto getaddr_res = getaddrinfo("google.com", NULL, &hints, &test_addr);  //  Адрес получаем в test_addr.
+		auto getaddr_res = getaddrinfo(ip_address.c_str(), NULL, &hints, &test_addr);  //  Адрес получаем в test_addr.
 		if (getaddr_res != 0)
 		{
-			cout << "Getaddrinfo function failed." << endl;
+			cout << "Unknown domain name." << endl;
 			closesocket(sock);
 			WSACleanup();
 			return 1;
@@ -306,9 +347,6 @@ int run_socket(string ip_address)
 	return 0;
 }
 
-
-
-
 /*  Основная функция main.  */
 int main()
 {
@@ -320,6 +358,7 @@ int main()
 	stat_array[4] = 0;
 	stat_array[5] = 0;
 	int ping_count;
+	string ping_count_str;
 	string ip_addr;
 
 	//  Заполнение пакета соответствующими данными.
@@ -331,25 +370,33 @@ int main()
 	
 	getline(cin, ip_addr);
 
-	cout << "How many times you want to ping?" << endl;
-	
-	cin >> ping_count;
-	cout << endl;
+	//  Начало работы сокета.
+	if (run_socket(ip_addr) != 0)
+		return 1;
 
-	if (ping_count <= 0)
+	cout << "How many times you want to ping?" << endl;
+	getline(cin, ping_count_str);
+
+	cout << endl;
+	if (ping_count_str != "")  //  Если пользователь ввел сколько раз нужно отправить пакеты.
+		ping_count = stoi(ping_count_str);
+	else  //  Если оставил поле сколько раз нужно отправить пакеты пустым.
 		ping_count = 1;
 
-	//  Начало работы сокета.
-	run_socket(ip_addr);
+	if ((ping_count <= 0) || (ping_count > 5000))
+		ping_count = 1;
 
 	//  Отправка пакетов.
 
 	for (int i = 0; i < ping_count; i++)
 	{
-		send_packet(packet, stat_array);
+		if (send_packet(packet, stat_array) != 0)
+			return 1;
+
 		packet.seq += _byteswap_ushort(1);
 		packet.control_sum = 0;
 		packet.control_sum = control_sum(packet);
+
 	}
 
 	stat_array[5] /= ping_count;  //  Вычисление среднего времени получения пакета.
