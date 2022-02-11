@@ -8,6 +8,8 @@
 #include <intrin.h>
 #include <chrono>
 #include <time.h>
+#include <conio.h>
+#include <thread>
 
 /*  Прочие объявления.  */
 #pragma comment(lib, "ws2_32.lib")
@@ -22,6 +24,7 @@ struct addrinfo *test_addr = NULL;
 struct addrinfo hints;
 WSADATA wsaData = { 0 };
 int iResult = 0;
+bool ping_was_stopped = false;
 
 struct sockaddr s_address;
 
@@ -41,6 +44,21 @@ struct icmp_packet
 
 
 /*  Вспомогательные функцкии.  */
+
+/*  Функция для потока, для выхода из программы.  */
+void f_for_thread()
+{
+	while (!ping_was_stopped) 
+	{
+		Sleep(1000);
+		if (_getch() == VK_TAB)  //  Условие нажатия TAB.
+		{
+			ping_was_stopped = true;
+			system("pause>0");  //  Пауза без надписи "для продолжения нажмите любую клавишу".
+			exit(0);
+		}
+	}
+}
 
 /*  Функция перевода int в двоичный string.  */
 string to_binary_string(unsigned int n)
@@ -187,6 +205,9 @@ string ip_to_str(SOCKADDR_STORAGE ip)
 /*  Функция отправки ICMP пакета.  */
 int send_packet(icmp_packet packet, int *stat_array)
 {
+	if (ping_was_stopped)
+		return -1;
+
 	char buf[128];
 	int timeout = 5000;
 	int t_addr_size = sizeof(t_addr);
@@ -253,12 +274,12 @@ bool is_ip_valid(string ip)
 
 	//  Проверка на количество точек в адресе (должно быть 3).
 	size_t found = ip.find(".");
-	do
+	while (found != string::npos)
 	{
 		ip.replace(found, 1, "");
 		point_count++;
 		found = ip.find(".");
-	} while (found != string::npos);
+	}
 
 	if (point_count != 3)
 		return false;
@@ -342,7 +363,7 @@ int run_socket(string ip_address)
 		WSACleanup();
 		return 1;
 	}
-	cout << "Connection to " << ip_address << " success.\nStarting send echo request..." << endl;
+	cout << "Connection to " << ip_address << " success." << endl;
 
 	return 0;
 }
@@ -358,6 +379,7 @@ int main()
 	stat_array[4] = 0;
 	stat_array[5] = 0;
 	int ping_count;
+	int real_ping_count = 0;
 	string ping_count_str;
 	string ip_addr;
 
@@ -378,7 +400,7 @@ int main()
 	getline(cin, ping_count_str);
 
 	cout << endl;
-	if (ping_count_str != "")  //  Если пользователь ввел сколько раз нужно отправить пакеты.
+	if ((ping_count_str != "")&&(ping_count_str.length() < 10))  //  Если пользователь ввел сколько раз нужно отправить пакеты.
 		ping_count = stoi(ping_count_str);
 	else  //  Если оставил поле сколько раз нужно отправить пакеты пустым.
 		ping_count = 1;
@@ -386,27 +408,47 @@ int main()
 	if ((ping_count <= 0) || (ping_count > 5000))
 		ping_count = 1;
 
+
 	//  Отправка пакетов.
+	thread th(f_for_thread);
+	cout << "Start sending echo-requests..." << endl;
+	Sleep(1500);
 
 	for (int i = 0; i < ping_count; i++)
 	{
-		if (send_packet(packet, stat_array) != 0)
+		int send_res = send_packet(packet, stat_array);
+		if (send_res == -1)  //  Если пинг завершен досрочно, нажатием клавиши TAB.
+			break;
+		else if (send_res != 0)  //  Остальные случаи ошибки отправки пакета.
+		{
+			ping_was_stopped = true;
+			th.join();
 			return 1;
+		}
 
+		//  Увеличение значиния очереди и последующий подсчет новой контрольной суммы.
+		//  _byteswap_ushort(): 0x0001 => 0x0100 (LE => BE).
 		packet.seq += _byteswap_ushort(1);
 		packet.control_sum = 0;
 		packet.control_sum = control_sum(packet);
-
+		
+		real_ping_count++;
 	}
 
-	stat_array[5] /= ping_count;  //  Вычисление среднего времени получения пакета.
+	stat_array[5] /= real_ping_count;  //  Вычисление среднего времени получения пакета.
 
 	cout << "\nStatistics.\n\tPackets sent:\t" << stat_array[0] << "\n\tPackets received:\t" << stat_array[1] << "\n\tPacket loss:\t" << stat_array[2];
 	cout << " (" << stat_array[2] * (100 / stat_array[0]) << "%)" << endl;
+	if (stat_array[3] == 999)
+		stat_array[3] = 0;
 	cout << "\nSend and recieve time.\n\tMin = " << stat_array[3] << " ms.\n\tMax = " << stat_array[4] << " ms.";
 	cout << "\n\tAverage = " << stat_array[5] << " ms." << endl;
 
+	ping_was_stopped = true;
+
 	closesocket(sock);
+	th.join();
 	system("pause");
+
 	return 0;
 }
