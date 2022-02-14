@@ -10,6 +10,8 @@
 #include <time.h>
 #include <conio.h>
 #include <thread>
+#include <fstream>
+#include <direct.h>
 
 /*  Прочие объявления.  */
 #pragma comment(lib, "ws2_32.lib")
@@ -45,12 +47,53 @@ struct icmp_packet
 
 /*  Вспомогательные функцкии.  */
 
+/*  Функция записи событий в лог-файл.  */
+int write_log(bool type, int error_code, string description)
+{
+	ofstream log_file;
+
+	//  Открытие файла.
+	log_file.open("res\\log.txt", ios_base::app);  //  Открытие с добавлением в конец строки.
+	if (!log_file.is_open())
+	{
+		_mkdir("res");
+		log_file.open("res\\log.txt", ios_base::app);
+	}
+
+	//  Запись в файл.
+	__time64_t now;
+	struct tm timeinfo;
+	char buf[32];
+	string s_type = "";
+	if (type == 0)
+		s_type = "operation";
+	else
+		s_type = "error";
+
+	//  Запись в buf текущей даты и времени.
+	now = time(NULL);
+	_localtime64_s(&timeinfo, &now);
+	asctime_s(buf, &timeinfo);
+	string s_buf = buf;
+	
+	size_t found = s_buf.find("\n");
+	s_buf.replace(found, 1, "");
+	s_buf = "[" + s_buf + "]" + "  \t" + "[" + s_type + "]" + "  \t" + "code: " + std::to_string(error_code) + "  \t" + "description: " + description + ".\n";
+	
+	//  Запись данных.
+	log_file << s_buf.c_str();
+
+	log_file.close();
+
+	return 0;
+}
+
 /*  Функция для потока, для выхода из программы.  */
 void f_for_thread()
 {
 	while (!ping_was_stopped) 
 	{
-		Sleep(1000);
+		Sleep(500);
 		if (_getch() == VK_TAB)  //  Условие нажатия TAB.
 		{
 			ping_was_stopped = true;
@@ -221,11 +264,14 @@ int send_packet(icmp_packet packet, int *stat_array)
 	if (send_res == SOCKET_ERROR)
 	{
 		cout << "Packet sending failed with " << GetLastError() << " error code." << endl;
+		write_log(1, GetLastError(), "Packet sending fail");
 		closesocket(sock);
 		WSACleanup();
+		write_log(0, 1, "Ping program end");
 		return 1;
 	}
 	cout << "Packet with " << send_res - 8 << " bytes was sent success." << endl;
+	write_log(0, 0, "Packet sending success");
 	stat_array[0] += 1;  //  +1 отправленный пакет.
 
 	//  Получение ответа.
@@ -233,18 +279,27 @@ int send_packet(icmp_packet packet, int *stat_array)
 	if (GetLastError() == 10060)
 	{
 		cout << "Request waiting interval exceeded." << endl;
+		write_log(1, 10060, "Request waiting interval exceeded");
 		stat_array[2] += 1;  //  +1 потерянный пакет.
 	}
 	else if (recv_res == SOCKET_ERROR)
 	{
 		if (recv_res == 0)
+		{
 			cout << "The connection was closed." << endl;
+			write_log(0, 0, "The connection was closed");
+		}
 		else
+		{
 			cout << "Data receiving failed with " << GetLastError() << endl;
+			write_log(1, GetLastError(), "Data receiving failed");
+		}
 		closesocket(sock);
 		WSACleanup();
+		write_log(0, 1, "Ping program end");
 		return 1;
 	}
+	write_log(0, 0, "Packet receiving success");
 
 	auto end = std::chrono::high_resolution_clock::now();
 	std::chrono::duration<double> elapsed_time = end - start;  //  Вычисление затраченного на получение пакета времени.
@@ -306,8 +361,11 @@ int run_socket(string ip_address)
 	iResult = WSAStartup(MAKEWORD(2, 2), &wsaData);
 	if (iResult != 0) {
 		wprintf(L"WSAStartup failed: %d\n", iResult);
+		write_log(1, iResult, "WSAStartup failed");
+		write_log(0, 1, "Ping program end");
 		return 1;
 	}
+	write_log(0, 0, "WSAStartup success");
 
 	//  Заполнение структуры хранящей информацию о адресе.
 	if ((ip_address[0] > 47) && (ip_address[0] < 58))  //  Если введен ip адрес.
@@ -317,6 +375,8 @@ int run_socket(string ip_address)
 		if (!is_ip_valid(ip_address))
 		{
 			cout << "IP address is incorrect." << endl;
+			write_log(1, 421, "IP adress is incorrect");
+			write_log(0, 1, "Ping program end");
 			return 1;
 		}
 
@@ -335,8 +395,10 @@ int run_socket(string ip_address)
 		if (getaddr_res != 0)
 		{
 			cout << "Unknown domain name." << endl;
+			write_log(1, 422, "Unknown domain name");
 			closesocket(sock);
 			WSACleanup();
+			write_log(0, 1, "Ping program end");
 			return 1;
 		}
 
@@ -351,7 +413,9 @@ int run_socket(string ip_address)
 	if (sock == INVALID_SOCKET)
 	{
 		cout << "Socket creation failed." << endl;
+		write_log(1, 420, "Socket creation failed");
 		WSACleanup();
+		write_log(0, 1, "Ping program end");
 		return 1;
 	}
 
@@ -359,11 +423,14 @@ int run_socket(string ip_address)
 	if (connect(sock, (sockaddr*) &t_addr, sizeof(t_addr)) == SOCKET_ERROR)
 	{
 		cout << "Connection to " << ip_address << " failed." << endl;
+		write_log(1, 423, "Connection to " + ip_address + " failed");
 		closesocket(sock);
 		WSACleanup();
+		write_log(0, 1, "Ping program end");
 		return 1;
 	}
 	cout << "Connection to " << ip_address << " success." << endl;
+	write_log(0, 0, "Connection to " + ip_address + " success");
 
 	return 0;
 }
@@ -371,6 +438,7 @@ int run_socket(string ip_address)
 /*  Основная функция main.  */
 int main()
 {
+	write_log(0, 0, "Ping program start");
 	int stat_array[6];
 	stat_array[0] = 0;
 	stat_array[1] = 0;
@@ -412,7 +480,7 @@ int main()
 	//  Отправка пакетов.
 	thread th(f_for_thread);
 	cout << "Start sending echo-requests..." << endl;
-	Sleep(1500);
+	Sleep(500);
 
 	for (int i = 0; i < ping_count; i++)
 	{
@@ -447,8 +515,10 @@ int main()
 	ping_was_stopped = true;
 
 	closesocket(sock);
+	write_log(0, 0, "Socket was closed");
 	th.join();
 	system("pause");
+	write_log(0, 0, "Ping program end");
 
 	return 0;
 }
