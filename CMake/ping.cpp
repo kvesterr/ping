@@ -14,7 +14,6 @@
 #include <direct.h>
 
 /*  Прочие объявления.  */
-#pragma comment(lib, "ws2_32.lib")
 
 using namespace std;
 
@@ -464,6 +463,7 @@ int main()
 	{
 		write_log(1, 425, "Run socket unknown error");
 		write_log(0, 1, "Ping program end");
+		system("pause");
 		return 1;
 	}
 
@@ -472,7 +472,16 @@ int main()
 
 	cout << endl;
 	if ((ping_count_str != "") && (ping_count_str.length() < 10))  //  Если пользователь ввел сколько раз нужно отправить пакеты.
-		ping_count = stoi(ping_count_str);
+	{
+		try
+		{
+			ping_count = stoi(ping_count_str);
+		}
+		catch (exception e)
+		{
+			ping_count = 1;
+		}
+	}
 	else  //  Если оставил поле сколько раз нужно отправить пакеты пустым.
 		ping_count = 1;
 
@@ -499,6 +508,7 @@ int main()
 			th.join();
 			write_log(1, 426, "Packet send unknown error");
 			write_log(0, 1, "Ping program end");
+			system("pause");
 			return 1;
 		}
 
