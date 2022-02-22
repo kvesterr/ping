@@ -347,8 +347,13 @@ bool is_ip_valid(string ip)
 	//  Проверка каждого числа в ip адресе (0 >= chislo < 256).
 	ip_to_array(source_ip, arr);
 	for (int i = 0; i < 4; i++)
-		if ((arr[i] < 0) || (arr[i] > 255))
+	{
+		int value = arr[i];
+		if (value < 0)
+			value += 256;
+		if ((value < 0) || (value > 255))
 			return false;
+	}
 
 	return true;
 }
