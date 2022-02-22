@@ -14,6 +14,7 @@
 #include <direct.h>
 
 /*  Прочие объявления.  */
+#pragma comment(lib, "ws2_32.lib")
 
 using namespace std;
 
@@ -297,13 +298,13 @@ int send_packet(icmp_packet packet, int* stat_array)
 		write_log(0, 1, "Ping program end");
 		return 1;
 	}
-	write_log(0, 0, "Packet receiving success");
 
 	auto end = std::chrono::high_resolution_clock::now();
 	std::chrono::duration<double> elapsed_time = end - start;  //  Вычисление затраченного на получение пакета времени.
 	if (recv_res > 0)
 	{
 		cout << "Recevied " << recv_res - 28 << " bytes from " << ip_to_str(t_addr) << " in " << (int)(elapsed_time.count() * 1000) << " ms." << endl;
+		write_log(0, 0, "Packet receiving success");
 
 		//  Сбор статистики.
 		stat_array[1] += 1;  //  +1 полученный пакет.
@@ -523,6 +524,7 @@ int main()
 
 	stat_array[5] /= real_ping_count;  //  Вычисление среднего времени получения пакета.
 
+	//  Вывод статистики пинга.
 	cout << "\nStatistics.\n\tPackets sent:\t" << stat_array[0] << "\n\tPackets received:\t" << stat_array[1] << "\n\tPacket loss:\t" << stat_array[2];
 	cout << " (" << stat_array[2] * (100 / stat_array[0]) << "%)" << endl;
 	if (stat_array[3] == 999)
